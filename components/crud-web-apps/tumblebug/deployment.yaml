@@ -1,0 +1,147 @@
+
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: service-account
+# ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tb-ui
+  namespace: kubeflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tb-web-ui
+  template:
+    metadata:
+      labels:
+        app: tb-web-ui
+    spec:
+      
+      containers:
+      - image: 404906229455.dkr.ecr.ap-northeast-1.amazonaws.com/product-gui-tumblebug:5103700
+        name: tb-ui-pod
+        ports:
+        - containerPort: 8080      
+          protocol: TCP  
+        env:
+        - name: APP_PREFIX
+          value: /tb # 這個值不要亂改，會壞掉，前後端都會採用同一個 PREFIX
+        - name: USERID_HEADER
+          value: kubeflow-userid
+        - name: APP_SECURE_COOKIES
+          value: "true"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+  name: tb-ui
+  namespace: kubeflow
+spec:
+  ports:
+  - name: http-tb-ui
+    port: 80
+    targetPort: 8080
+  selector:
+    app: tb-web-ui
+  type: ClusterIP
+
+---
+
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: tb-ui
+  namespace: kubeflow
+spec:
+  gateways:
+  - kubeflow-gateway
+  hosts:
+  - '*'
+  http:
+  - headers:
+      request:
+        add:
+          x-forwarded-prefix: /tb
+  - match:
+    - uri:
+        prefix: /tb/
+    rewrite:
+      uri: /  # 在 forward 前，改變 uri
+    route:
+    - destination:
+        host: tb-ui.kubeflow.svc.cluster.local
+        port:
+          number: 80
+    timeout: 300s
+  
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubeflow-tumblebug-view
+  labels:
+    rbac.authorization.kubeflow.org/aggregate-to-kubeflow-view: "true"
+rules:
+- apiGroups:
+  - kubeflow.org
+  resources:
+  - tb
+  verbs:
+  - get
+  - list
+  - watch
+
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: profiles-tbui
+  namespace: kubeflow
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            
+  selector:
+    matchLabels:
+      app: tb-web-ui # 這裡決定可不可以 access `DOMAIN.com/tb/`
+      
+---
+
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   labels:
+#     run: tb-ui
+#   name: service
+# spec:
+#   ports:
+#   - name: http
+#     port: 80
+#     protocol: TCP
+#     targetPort: 5000
+#   type: ClusterIP
+# ---
+
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata:
+#   namespace: kubeflow
+#   name: cluster-role-binding
+# roleRef:
+#   apiGroup: rbac.authorization.k8s.io
+#   kind: ClusterRole
+#   name: cluster-role
+# subjects:
+# - kind: ServiceAccount
+#   name: service-account
+#   namespace: kubeflow
+# 
+# ---
