@@ -71,7 +71,7 @@ spec:
     - uri:
         prefix: /tb/
     rewrite:
-      uri: /  # 在 forward 前，改變 uri
+      uri: /  # 在 forward 前，改變 uri，為了讓內部 app 接下去
     route:
     - destination:
         host: tb-ui.kubeflow.svc.cluster.local
